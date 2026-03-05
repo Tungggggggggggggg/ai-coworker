@@ -11,6 +11,10 @@ from app.rag.retriever import query_rag_context
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import ToolMessage, SystemMessage
 from app.rag.retriever import query_rag_context, search_gucci_knowledge_base, lookup_employee_kpi
+from app.core.logger import get_logger
+from app.core.decorators import measure_latency_tokens
+
+logger = get_logger("agents.nodes")
 
 llm_persona = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash-lite", 
@@ -32,20 +36,17 @@ def load_prompt(filename: str) -> str:
         return f.read()
 
 
-def estimate_tokens(text: str) -> int:
-    # 1 token roughly 4 ký tự (mock metric rất đơn giản, vì SDK chưa hỗ trợ đếm số raw str gọn nhẹ)
-    return len(str(text)) // 4
-
-
+@measure_latency_tokens
 def _invoke_llm_json(prompt: str, user_query: str) -> dict[str, any]:
     """Hàm wrapper cho Supervisor để xuất Intent JSON."""
-    start_time = time.time()
-
-    response = client.models.generate_content(
-        model="gemini-2.5-flash-lite",
-        contents=f"{prompt}\nUser nói: {user_query}",
-    )
-    latency = (time.time() - start_time) * 1000  # ms
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=f"{prompt}\nUser nói: {user_query}",
+        )
+    except Exception as e:
+        logger.error(f"Google API Error: {e}")
+        raise e  # Bubble up the API error so FastAPI triggers 500
 
     raw_out = response.text.strip()
     if raw_out.startswith("```json"):
@@ -55,45 +56,46 @@ def _invoke_llm_json(prompt: str, user_query: str) -> dict[str, any]:
     try:
         data = json.loads(raw_out.strip())
     except Exception as e:
-        print("Json Parse Error:", e)
+        logger.error(f"Json Parse Error: {e}")
         data = {
             "next_node": "END",
             "reasoning": "Parse json fail",
             "guardrail_message": "Hệ thống gặp lỗi phân giải Intent.",
         }
 
-    return data, latency, estimate_tokens(prompt + user_query + raw_out)
+    return data
 
 
-def _invoke_persona_llm(prompt_template: str, messages_history: list) -> tuple[str, float, int]:
+@measure_latency_tokens
+def _invoke_persona_llm(prompt_template: str, messages_history: list) -> str:
     """Hàm wrapper cho Persona Agents text-generation with Tool Calling."""
-    start_time = time.time()
-    
     msgs = [SystemMessage(content=prompt_template)] + messages_history
     
-    # Lần call đầu tiên
-    response = llm_with_tools.invoke(msgs)
-    
-    # Loop xử lý tools nếu LLM yêu cầu gọi hàm
-    while response.tool_calls:
-        msgs.append(response)
-        for tc in response.tool_calls:
-            if tc["name"] == "search_gucci_knowledge_base":
-                tool_res = search_gucci_knowledge_base.invoke(tc["args"])
-            elif tc["name"] == "lookup_employee_kpi":
-                tool_res = lookup_employee_kpi.invoke(tc["args"])
-            else:
-                tool_res = "Tool không tồn tại"
-                
-            msgs.append(ToolMessage(content=str(tool_res), tool_call_id=tc["id"], name=tc["name"]))
-            
-        # Call lại LLM kèm theo kết quả của Tool
+    try:
+        # Lần call đầu tiên
         response = llm_with_tools.invoke(msgs)
         
-    latency = (time.time() - start_time) * 1000
-    tok = estimate_tokens(str(msgs)) + estimate_tokens(response.content)
-    
-    return response.content, latency, tok
+        # Loop xử lý tools nếu LLM yêu cầu gọi hàm
+        while response.tool_calls:
+            msgs.append(response)
+            for tc in response.tool_calls:
+                if tc["name"] == "search_gucci_knowledge_base":
+                    tool_res = search_gucci_knowledge_base.invoke(tc["args"])
+                elif tc["name"] == "lookup_employee_kpi":
+                    tool_res = lookup_employee_kpi.invoke(tc["args"])
+                else:
+                    tool_res = "Tool không tồn tại"
+                    
+                msgs.append(ToolMessage(content=str(tool_res), tool_call_id=tc["id"], name=tc["name"]))
+                
+            # Call lại LLM kèm theo kết quả của Tool
+            response = llm_with_tools.invoke(msgs)
+            
+    except Exception as e:
+        logger.error(f"Google GenAI LangChain Error: {e}")
+        raise e  # Bubble up to fastAPI 500
+
+    return response.content
 
 
 # --- NODES LOGIC ---

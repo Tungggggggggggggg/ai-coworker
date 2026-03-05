@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useChatSimulation } from '@/hooks/useChatSimulation';
 import { MessageList } from './MessageList';
 import { MessageInput } from './MessageInput';
@@ -9,13 +9,10 @@ import { BotMessageSquare } from 'lucide-react';
 export const ChatContainer: React.FC = () => {
     const { messages, isLoading, sendMessage } = useChatSimulation();
 
-    // State luân chuyển Metrics cho giao diện OpsBadge (Set value check removed)
-    const [, setMetrics] = useState({ lat: 0, tok: 0 });
+
 
     const handleSendMessage = (text: string) => {
-        sendMessage(text, (lat, tok) => {
-            setMetrics({ lat, tok });
-        });
+        sendMessage(text, () => { });
     };
 
     return (

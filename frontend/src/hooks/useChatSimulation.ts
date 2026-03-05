@@ -44,7 +44,9 @@ export function useChatSimulation() {
             // 4. Update Chat box
             const aiMsg: ChatMessage = {
                 role: response.agent_name,
-                content: response.reply
+                content: response.reply,
+                latency_ms: response.latency_ms,
+                estimated_tokens: response.estimated_tokens
             };
             setMessages(prev => [...prev, aiMsg]);
 

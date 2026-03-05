@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils';
 
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { OpsBadge } from '@/components/ui/OpsBadge';
+
 
 interface MessageBubbleProps {
     message: ChatMessage;
@@ -64,7 +66,21 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({ message }) => {
                         </ReactMarkdown>
                     )}
                 </div>
+                {message.latency_ms && message.estimated_tokens && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        transition={{ delay: 0.2 }}
+                        className="mt-2"
+                    >
+                        <OpsBadge
+                            latency_ms={message.latency_ms}
+                            estimated_tokens={message.estimated_tokens}
+                        />
+                    </motion.div>
+                )}
             </div>
         </motion.div>
     );
 };
+

@@ -1,6 +1,8 @@
 export interface ChatMessage {
     role: "OD Director" | "Supervisor" | "CEO" | "CHRO" | "Manager" | "System" | string;
     content: string;
+    latency_ms?: number;
+    estimated_tokens?: number;
 }
 
 export interface ChatRequestPayload {

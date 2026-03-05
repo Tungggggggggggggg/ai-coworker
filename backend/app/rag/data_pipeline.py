@@ -7,9 +7,12 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from app.core.config import settings
+from app.core.logger import get_logger
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = get_logger("rag.data_pipeline")
 
 # Initialize Gemini Client for Semantic Chunking
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
@@ -71,7 +74,7 @@ def generate_chunks_with_gemini(text: str) -> list[dict]:
         chunks = json.loads(clean_text)
         return chunks
     except Exception as e:
-        print(f"Error processing with Gemini: {e}")
+        logger.error(f"Error processing with Gemini: {e}")
         return []
 
 
@@ -80,23 +83,23 @@ def main():
     pdf_path = root_dir / settings.PDF_DATA_PATH
 
     if not pdf_path.exists():
-        print(f"Không tìm thấy file PDF tại: {pdf_path}")
+        logger.error(f"Không tìm thấy file PDF tại: {pdf_path}")
         return
 
-    print("Bước 1: Giải nén Text từ PDF...")
+    logger.info("Bước 1: Giải nén Text từ PDF...")
     pages = extract_text_from_pdf(str(pdf_path))
-    print(f"-> Đã đọc {len(pages)} trang.")
+    logger.info(f"-> Đã đọc {len(pages)} trang.")
 
-    print("Bước 2: Giao tiếp Gemini để Semantic Chunking...")
+    logger.info("Bước 2: Giao tiếp Gemini để Semantic Chunking...")
     all_chunks = []
     for i, page_text in enumerate(pages):
-        print(f"  - Xử lý trang {i+1}...")
+        logger.info(f"  - Xử lý trang {i+1}...")
         chunks = generate_chunks_with_gemini(page_text)
         all_chunks.extend(chunks)
 
-    print(f"-> Trích xuất thành công {len(all_chunks)} semantic chunks.")
+    logger.info(f"-> Trích xuất thành công {len(all_chunks)} semantic chunks.")
 
-    print("Bước 3: Tạo LangChain Documents & Nhúng bằng Embedding Models...")
+    logger.info("Bước 3: Tạo LangChain Documents & Nhúng bằng Embedding Models...")
     documents = []
     for chunk in all_chunks:
         # FAISS metadata values must be str, int, float or bool
@@ -107,15 +110,15 @@ def main():
         doc = Document(page_content=chunk.get("page_content", ""), metadata=meta)
         documents.append(doc)
 
-    print("Bước 4: Khởi tạo FAISS VectorStore...")
+    logger.info("Bước 4: Khởi tạo FAISS VectorStore...")
     vectorstore = FAISS.from_documents(documents, embeddings)
 
     vs_dir = root_dir / "app/rag/vectorstore"
     os.makedirs(vs_dir, exist_ok=True)
 
-    print("Bước 5: Lưu index.faiss cục bộ...")
+    logger.info("Bước 5: Lưu index.faiss cục bộ...")
     vectorstore.save_local(str(vs_dir))
-    print(f"-> Hoàn tất lưu FAISS VectorStore tại: {vs_dir}")
+    logger.info(f"-> Hoàn tất lưu FAISS VectorStore tại: {vs_dir}")
 
 
 if __name__ == "__main__":
