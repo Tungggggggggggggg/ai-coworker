@@ -80,9 +80,16 @@ def supervisor_node(state: AppState) -> AppState:
         return state
 
     current_human_msg = messages[-1].content
+    
+    history_str = "\n".join([f"{'User' if isinstance(m, HumanMessage) else (getattr(m, 'name', 'AI') or 'AI')}: {m.content}" for m in messages[-6:-1]])
+    if history_str:
+         msg_with_history = f"[LỊCH SỬ HỘI THOẠI GẦN ĐÂY]\n{history_str}\n\n[TIN NHẮN MỚI NHẤT CỦA USER]\n{current_human_msg}"
+    else:
+         msg_with_history = current_human_msg
+
     sup_prompt = load_prompt("supervisor.txt")
 
-    data, lat, tok = _invoke_llm_json(sup_prompt, current_human_msg)
+    data, lat, tok = _invoke_llm_json(sup_prompt, msg_with_history)
 
     # Track update
     state["latency"] = state.get("latency", 0) + lat
@@ -120,11 +127,17 @@ def _run_persona(name: str, prompt: str, state: AppState) -> AppState:
     messages = state.get("messages", [])
     user_query = messages[-1].content
 
-    # 1. RAG Retrieve
+    # 1. RAG Retrieve using only the current query
     rag_ctx = query_rag_context(user_query)
+    
+    history_str = "\n".join([f"{'User' if isinstance(m, HumanMessage) else (getattr(m, 'name', 'AI') or 'AI')}: {m.content}" for m in messages[-6:-1]])
+    if history_str:
+         msg_with_history = f"[LỊCH SỬ HỘI THOẠI GẦN ĐÂY]\n{history_str}\n\n[TIN NHẮN MỚI NHẤT CỦA USER]\n{user_query}"
+    else:
+         msg_with_history = user_query
 
     # 2. Sinh answer
-    answer_text, lat, tok = _invoke_persona_llm(prompt, user_query, rag_ctx)
+    answer_text, lat, tok = _invoke_persona_llm(prompt, msg_with_history, rag_ctx)
 
     state["latency"] = state.get("latency", 0) + lat
     state["total_tokens"] = state.get("total_tokens", 0) + tok
