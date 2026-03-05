@@ -4,6 +4,8 @@ This project simulates a fully functional AI-enabled workplace environment where
 
 Developed as part of the **AI Engineer Intern Assignment** for Edtronaut's Job Simulation Platform.
 
+🚀 **[Live Demo](https://ai-coworker-two.vercel.app/)** 
+
 ## 🌟 Key Features
 * **Role-Playing AI Agents:** Interact with distinctive AI personas (e.g., Gucci Group CEO, CHRO, Regional Manager) constrained by specific system instructions and business goals.
 * **Retrieval-Augmented Generation (RAG):** AI agents retrieve context from vector databases (FAISS) based on external knowledge (e.g., PDF documents like the Gucci Competency Framework) to provide highly accurate, domain-specific responses.
