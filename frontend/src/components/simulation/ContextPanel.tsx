@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { BookOpen, Map, Users, Info, ShieldAlert } from 'lucide-react';
+import { BookOpen, Users } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export const ContextPanel: React.FC = () => {
