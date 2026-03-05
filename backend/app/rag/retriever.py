@@ -40,3 +40,21 @@ def query_rag_context(query: str) -> str:
     except Exception as e:
         print(f"RAG Error: {e}")
         return "Tôi đang gặp khó khăn khi truy cập dữ liệu Gucci. Vui lòng thử lại sau."
+
+
+from langchain_core.tools import tool
+
+@tool
+def search_gucci_knowledge_base(query: str) -> str:
+    """Tra cứu cơ sở trí thức (Knowledge base) của tập đoàn Gucci bằng RAG (Vector DB) để lấy thông tin nội bộ cực kỳ quan trọng về chính sách, Competency Framework, v.v. Lưu ý: Luôn dùng tool này nếu người dùng hỏi về kiến thức chuyên môn, định nghĩa của tổ chức."""
+    return query_rag_context(query)
+
+@tool
+def lookup_employee_kpi(employee_id: str) -> str:
+    """Sử dụng khi cần tra cứu điểm số đánh giá KPI cá nhân hoặc bảng điểm năng lực của một nhân sự cụ thể theo mã số nhân viên."""
+    fake_db = {
+        "NV01": "Nguyễn Văn A - Passion: 4.5/5, Vision: 3.5/5 - Đạt KPI",
+        "NV02": "Trần Thị B - Passion: 2.0/5, Vision: 4.0/5 - Trượt KPI",
+    }
+    eid = employee_id.upper().strip()
+    return fake_db.get(eid, f"Không tìm thấy dữ liệu KPI cho nhân sự có mã {employee_id}.")

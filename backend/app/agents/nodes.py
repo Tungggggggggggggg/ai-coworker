@@ -8,7 +8,19 @@ from app.core.config import settings
 from app.agents.state import AppState
 from app.rag.retriever import query_rag_context
 
-# Khởi tạo Gemini Web Client
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_core.messages import ToolMessage, SystemMessage
+from app.rag.retriever import query_rag_context, search_gucci_knowledge_base, lookup_employee_kpi
+
+llm_persona = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash-lite", 
+    temperature=0.7,
+    google_api_key=settings.GEMINI_API_KEY
+)
+tools = [search_gucci_knowledge_base, lookup_employee_kpi]
+llm_with_tools = llm_persona.bind_tools(tools)
+
+# Khởi tạo Gemini Web Client (Dành cho Supervisor JSON xuất)
 client = genai.Client(api_key=settings.GEMINI_API_KEY)
 
 # Đường dẫn folder chứa prompts
@@ -22,7 +34,7 @@ def load_prompt(filename: str) -> str:
 
 def estimate_tokens(text: str) -> int:
     # 1 token roughly 4 ký tự (mock metric rất đơn giản, vì SDK chưa hỗ trợ đếm số raw str gọn nhẹ)
-    return len(text) // 4
+    return len(str(text)) // 4
 
 
 def _invoke_llm_json(prompt: str, user_query: str) -> dict[str, any]:
@@ -30,7 +42,7 @@ def _invoke_llm_json(prompt: str, user_query: str) -> dict[str, any]:
     start_time = time.time()
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-2.5-flash-lite",
         contents=f"{prompt}\nUser nói: {user_query}",
     )
     latency = (time.time() - start_time) * 1000  # ms
@@ -53,22 +65,35 @@ def _invoke_llm_json(prompt: str, user_query: str) -> dict[str, any]:
     return data, latency, estimate_tokens(prompt + user_query + raw_out)
 
 
-def _invoke_persona_llm(
-    prompt_template: str, user_query: str, rag_context: str
-) -> tuple[str, float, int]:
-    """Hàm wrapper cho Persona Agents text-generation."""
+def _invoke_persona_llm(prompt_template: str, messages_history: list) -> tuple[str, float, int]:
+    """Hàm wrapper cho Persona Agents text-generation with Tool Calling."""
     start_time = time.time()
-
-    final_prompt = prompt_template.format(
-        rag_context=rag_context, user_message=user_query
-    )
-    response = client.models.generate_content(
-        model="gemini-2.5-flash", contents=final_prompt
-    )
-
-    latency = (time.time() - start_time) * 1000  # ms
-    output_text = response.text
-    return output_text, latency, estimate_tokens(final_prompt + output_text)
+    
+    msgs = [SystemMessage(content=prompt_template)] + messages_history
+    
+    # Lần call đầu tiên
+    response = llm_with_tools.invoke(msgs)
+    
+    # Loop xử lý tools nếu LLM yêu cầu gọi hàm
+    while response.tool_calls:
+        msgs.append(response)
+        for tc in response.tool_calls:
+            if tc["name"] == "search_gucci_knowledge_base":
+                tool_res = search_gucci_knowledge_base.invoke(tc["args"])
+            elif tc["name"] == "lookup_employee_kpi":
+                tool_res = lookup_employee_kpi.invoke(tc["args"])
+            else:
+                tool_res = "Tool không tồn tại"
+                
+            msgs.append(ToolMessage(content=str(tool_res), tool_call_id=tc["id"], name=tc["name"]))
+            
+        # Call lại LLM kèm theo kết quả của Tool
+        response = llm_with_tools.invoke(msgs)
+        
+    latency = (time.time() - start_time) * 1000
+    tok = estimate_tokens(str(msgs)) + estimate_tokens(response.content)
+    
+    return response.content, latency, tok
 
 
 # --- NODES LOGIC ---
@@ -103,11 +128,13 @@ def supervisor_node(state: AppState) -> AppState:
         state["messages"] = [error_msg]
         state["next_node"] = "END"
         state["intent_reasoning"] = "Guardrail triggered"
+        state["safety_flags"] = True
         return state
 
     state["next_node"] = data.get("next_node", "END").lower()
     state["intent_reasoning"] = data.get("reasoning", "")
     state["intent_hint"] = data.get("hint", "")
+    state["safety_flags"] = False
     return state
 
 
@@ -125,25 +152,15 @@ def manager_node(state: AppState) -> AppState:
 
 def _run_persona(name: str, prompt: str, state: AppState) -> AppState:
     messages = state.get("messages", [])
-    user_query = messages[-1].content
-
-    # 1. RAG Retrieve using only the current query
-    rag_ctx = query_rag_context(user_query)
+    history_msgs = messages[-21:]  # Trích xuất 20 Human/AIMessage Objects cho Tool Calling
     
-    history_str = "\n".join([f"{'User' if isinstance(m, HumanMessage) else (getattr(m, 'name', 'AI') or 'AI')}: {m.content}" for m in messages[-21:-1]])
-    if history_str:
-         msg_with_history = f"[LỊCH SỬ HỘI THOẠI GẦN ĐÂY]\n{history_str}\n\n[TIN NHẮN MỚI NHẤT CỦA USER]\n{user_query}"
-    else:
-         msg_with_history = user_query
-
-    # 2. Sinh answer
-    answer_text, lat, tok = _invoke_persona_llm(prompt, msg_with_history, rag_ctx)
+    answer_text, lat, tok = _invoke_persona_llm(prompt, history_msgs)
 
     state["latency"] = state.get("latency", 0) + lat
     state["total_tokens"] = state.get("total_tokens", 0) + tok
-    state["rag_context"] = rag_ctx
+    state["safety_flags"] = state.get("safety_flags", False)
 
     agent_msg = AIMessage(content=answer_text, name=name)
     state["messages"] = [agent_msg]
-    state["next_node"] = "END"  # Persona là end of cycle
+    state["next_node"] = "END"
     return state

@@ -34,6 +34,8 @@ workflow.add_edge("ceo", END)
 workflow.add_edge("chro", END)
 workflow.add_edge("manager", END)
 
-# 4. Biên dịch (Compile)
-# Ta có thể gắn thẻ memory Checkpointer ở đây nếu muốn giữ full state history sau này
-app_graph = workflow.compile()
+from langgraph.checkpoint.memory import MemorySaver
+
+# 4. Biên dịch (Compile) với Checkpointer
+memory = MemorySaver()
+app_graph = workflow.compile(checkpointer=memory)

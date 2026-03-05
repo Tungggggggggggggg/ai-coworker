@@ -7,11 +7,6 @@ from app.agents.state import AppState
 
 router = APIRouter()
 
-# Tạm sử dụng memory dict lưu session history cho assignment
-# Trong production có thể dùng Redis / Postgres Checkpointer
-SESSION_STORE: Dict[str, AppState] = {}
-
-
 class ChatRequest(BaseModel):
     session_id: str
     message: str
@@ -22,6 +17,7 @@ class ChatResponse(BaseModel):
     reply: str
     latency_ms: float
     estimated_tokens: int
+    is_unsafe: bool
 
 
 @router.post("/chat", response_model=ChatResponse)
@@ -32,34 +28,19 @@ async def chat_endpoint(request: ChatRequest):
     if not user_msg.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
-    # Tạo hoặc gọi state
-    if session_id not in SESSION_STORE:
-        SESSION_STORE[session_id] = {
-            "messages": [],
-            "next_node": "",
-            "rag_context": "",
-            "intent_reasoning": "",
-            "latency": 0.0,
-            "total_tokens": 0,
-        }
-
-    current_state = SESSION_STORE[session_id]
-
-    # Reset latency per request or keep cumulative? Usually metrics are cumulative for session,
-    # but frontend might expect per-request metrics. We'll track cumulative in state,
-    # and diff for per-request return.
-    prev_latency = current_state.get("latency", 0)
-    prev_tokens = current_state.get("total_tokens", 0)
-
-    # Append human message
     new_human_msg = HumanMessage(content=user_msg)
-    current_state["messages"] = current_state.get("messages", []) + [new_human_msg]
+    
+    # Cấu hình Checkpointer với thread_id dựa trên session_id
+    config = {"configurable": {"thread_id": session_id}}
+    
+    # Lấy state hiện tại (trước khi gọi) để tính toán Diff Latency/Tokens (Per-request Metrics)
+    current_state = app_graph.get_state(config).values
+    prev_latency = current_state.get("latency", 0.0) if current_state else 0.0
+    prev_tokens = current_state.get("total_tokens", 0) if current_state else 0
 
     try:
-        # Run graph
-        final_state = app_graph.invoke(current_state)
-        # Update store
-        SESSION_STORE[session_id] = final_state
+        # Run graph (Checkpointer sẽ tự merge history nếu operator.add tồn tại trên list attribute)
+        final_state = app_graph.invoke({"messages": [new_human_msg]}, config=config)
 
         # Determine latest answer
         ai_response = final_state["messages"][-1]
@@ -77,15 +58,18 @@ async def chat_endpoint(request: ChatRequest):
             agent_source = "Supervisor"
         else:
             reply_text = ai_response.content
-            agent_source = ai_response.name if hasattr(ai_response, "name") and ai_response.name else "System"
+            agent_source = getattr(ai_response, "name", "System") or "System"
 
-        req_lat = final_state["latency"] - prev_latency
-        req_tok = final_state["total_tokens"] - prev_tokens
+        req_lat = final_state.get("latency", 0.0) - prev_latency
+        req_tok = final_state.get("total_tokens", 0) - prev_tokens
+        is_unsafe = final_state.get("safety_flags", False)
+
         return ChatResponse(
             agent_name=agent_source,
             reply=reply_text,
             latency_ms=round(req_lat, 2),
             estimated_tokens=req_tok,
+            is_unsafe=is_unsafe
         )
 
     except Exception as e:

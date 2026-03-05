@@ -11,3 +11,4 @@ class AppState(TypedDict):
     intent_hint: str # Gợi ý của Supervisor khi user hỏi mơ hồ
     latency: float  # API latency tính bằng miliseconds
     total_tokens: int  # Ước tính token sử dụng
+    safety_flags: bool  # Cờ an toàn, True nếu có vi phạm

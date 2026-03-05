@@ -57,7 +57,7 @@ def generate_chunks_with_gemini(text: str) -> list[dict]:
     """Gửi text qua Gemini để tạo Semantic Chunks và gắn Metadata JSON."""
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.5-flash-lite",
             contents=PROMPT_EXTRACT_METADATA.format(text=text),
         )
         # Clean response if it contains markdown JSON block

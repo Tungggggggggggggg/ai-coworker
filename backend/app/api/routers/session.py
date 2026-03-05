@@ -1,15 +1,18 @@
 from fastapi import APIRouter
-from app.api.routers.chat import SESSION_STORE
+from app.agents.graph import app_graph
 
 router = APIRouter()
 
 
 @router.get("/session/{session_id}")
 async def get_session(session_id: str):
-    if session_id not in SESSION_STORE:
+    config = {"configurable": {"thread_id": session_id}}
+    state_snap = app_graph.get_state(config)
+    
+    if not state_snap or not state_snap.values:
         return {"messages": []}
 
-    state = SESSION_STORE[session_id]
+    state = state_snap.values
     messages = state.get("messages", [])
 
     # Format messages for frontend
