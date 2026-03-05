@@ -81,7 +81,7 @@ def supervisor_node(state: AppState) -> AppState:
 
     current_human_msg = messages[-1].content
     
-    history_str = "\n".join([f"{'User' if isinstance(m, HumanMessage) else (getattr(m, 'name', 'AI') or 'AI')}: {m.content}" for m in messages[-6:-1]])
+    history_str = "\n".join([f"{'User' if isinstance(m, HumanMessage) else (getattr(m, 'name', 'AI') or 'AI')}: {m.content}" for m in messages[-21:-1]])
     if history_str:
          msg_with_history = f"[LỊCH SỬ HỘI THOẠI GẦN ĐÂY]\n{history_str}\n\n[TIN NHẮN MỚI NHẤT CỦA USER]\n{current_human_msg}"
     else:
@@ -130,7 +130,7 @@ def _run_persona(name: str, prompt: str, state: AppState) -> AppState:
     # 1. RAG Retrieve using only the current query
     rag_ctx = query_rag_context(user_query)
     
-    history_str = "\n".join([f"{'User' if isinstance(m, HumanMessage) else (getattr(m, 'name', 'AI') or 'AI')}: {m.content}" for m in messages[-6:-1]])
+    history_str = "\n".join([f"{'User' if isinstance(m, HumanMessage) else (getattr(m, 'name', 'AI') or 'AI')}: {m.content}" for m in messages[-21:-1]])
     if history_str:
          msg_with_history = f"[LỊCH SỬ HỘI THOẠI GẦN ĐÂY]\n{history_str}\n\n[TIN NHẮN MỚI NHẤT CỦA USER]\n{user_query}"
     else:
